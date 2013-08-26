@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 
+struct list blocked_list;
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -93,6 +94,9 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+	/* for blocking list !!*/
+	struct list_elem elem1;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -100,6 +104,10 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+/* $$$ */
+//Time till when it will sleep.
+int64_t end_time;
+/* $$$ */
   };
 
 /* If false (default), use round-robin scheduler.

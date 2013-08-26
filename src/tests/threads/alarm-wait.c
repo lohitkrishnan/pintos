@@ -148,6 +148,7 @@ sleeper (void *t_)
 /* $$$  */
 
       int64_t sleep_until = test->start + i * t->duration;
+//	printf("from test file. Thread : %s \t e time %ld \n",thread_name(), (sleep_until-timer_ticks()));
       timer_sleep (sleep_until - timer_ticks ());
       lock_acquire (&test->output_lock);
       *test->output_pos++ = t->id;

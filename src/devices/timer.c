@@ -90,12 +90,35 @@ void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-
+	//printf("Endtimeee %"PRId64 "\n",start);
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks){
-	printf("\nThread name : %s", thread_name()); 
-    thread_yield ();
-	}
+if(ticks <= 0){
+	return;
+}
+	//printf("\nThread name : %s\n ticks = %d", thread_name(), ticks); 
+  //while (timer_elapsed (start) < ticks){
+	/*
+
+	Algo :
+	add the entry for end_time in the thread attrib end_time
+	add the thread into the blocking list.
+i	block the thread using thread_block()
+	
+*/
+//	printf("\nThread : %s \n", thread_name());
+	struct thread *t = thread_current();
+	t->end_time = ticks + start;
+//	printf("t->end_time is : %"PRId64"\n", t->end_time);
+	list_push_back(&blocked_list, &(t->elem1));
+
+	//turn off the interrupt.
+	enum intr_level old_level = intr_disable();
+	thread_block();
+	intr_set_level(old_level);
+	
+	//thread_yield ();
+
+//	}
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -174,6 +197,28 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+// $$$ Add logic for checking the whole list whether to wake up a specific thread.
+if(!(list_empty(&blocked_list)))
+{
+
+	struct list_elem *e;
+ASSERT (intr_get_level () == INTR_OFF);
+//printf("here");	
+	for (e=list_begin(&blocked_list);e!=list_end(&blocked_list);e=list_next(e))
+	{
+      		struct thread *t = list_entry (e, struct thread, elem1);
+   		if(t->end_time == timer_ticks())
+		{
+//			printf("\ntwo >>3424@#@$#$\n");
+			//t->status = THREAD_RUNNING;
+			list_remove(e);
+			thread_unblock(t);	
+		}
+	}
+
+		
+}
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
