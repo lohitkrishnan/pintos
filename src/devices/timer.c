@@ -95,8 +95,6 @@ timer_sleep (int64_t ticks)
 if(ticks <= 0){
 	return;
 }
-	//printf("\nThread name : %s\n ticks = %d", thread_name(), ticks); 
-  //while (timer_elapsed (start) < ticks){
 	/*
 
 	Algo :
@@ -105,10 +103,8 @@ if(ticks <= 0){
 i	block the thread using thread_block()
 	
 */
-//	printf("\nThread : %s \n", thread_name());
 	struct thread *t = thread_current();
 	t->end_time = ticks + start;
-//	printf("t->end_time is : %"PRId64"\n", t->end_time);
 	list_push_back(&blocked_list, &(t->elem1));
 
 	//turn off the interrupt.
@@ -116,7 +112,6 @@ i	block the thread using thread_block()
 	thread_block();
 	intr_set_level(old_level);
 	
-	//thread_yield ();
 
 //	}
 }
@@ -210,8 +205,6 @@ ASSERT (intr_get_level () == INTR_OFF);
       		struct thread *t = list_entry (e, struct thread, elem1);
    		if(t->end_time == timer_ticks())
 		{
-//			printf("\ntwo >>3424@#@$#$\n");
-			//t->status = THREAD_RUNNING;
 			list_remove(e);
 			thread_unblock(t);	
 		}
