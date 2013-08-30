@@ -273,6 +273,7 @@ thread_block (void)
 void
 thread_unblock (struct thread *t) 
 {
+	struct thread *th;
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
@@ -282,13 +283,22 @@ thread_unblock (struct thread *t)
 	list_insert_ordered(&ready_list, &t->elem, priority_less, NULL);
   t->status = THREAD_READY;
 	// checking if the priority of the thread to be put on ready list is higher than the current running thread. If yes, schedule it.
-if(thread_current()->priority < t->priority && thread_current() != idle_thread )
+
+
+th = list_entry(list_begin(&ready_list),struct thread, elem);
+//th = list_entry(*(list_begin(&ready_list)),struct thread, elem);
+if(thread_current()->priority < th->priority && thread_current() != idle_thread )
 	{	
 	thread_yield();
 	}
   intr_set_level (old_level);
 }
 
+/*if (thread_current()->priority < (list_entry(list_begin(&ready_list),struct thread, elem)->priority) && thread_current() != idle_thread)
+{
+	thread_yield();
+}
+*/
 /* Returns the name of the running thread. */
 const char *
 thread_name (void) 
@@ -383,7 +393,15 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+
+struct thread *th;				
   thread_current ()->priority = new_priority;
+th = list_entry(list_begin(&ready_list),struct thread, elem);
+if(thread_current()->priority < th->priority && thread_current() != idle_thread )
+	{	
+	thread_yield();
+	}
+
 }
 
 /* Returns the current thread's priority. */

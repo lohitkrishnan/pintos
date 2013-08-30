@@ -199,7 +199,6 @@ if(!(list_empty(&blocked_list)))
 
 	struct list_elem *e;
 ASSERT (intr_get_level () == INTR_OFF);
-//printf("here");	
 	for (e=list_begin(&blocked_list);e!=list_end(&blocked_list);e=list_next(e))
 	{
       		struct thread *t = list_entry (e, struct thread, elem1);
