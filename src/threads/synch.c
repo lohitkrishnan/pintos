@@ -53,17 +53,22 @@ priority_less (const struct list_elem *a_, const struct list_elem *b_,
 /* priority_less function */
 /* Returns true if priority of A is more than priority of  B, false
    otherwise. */
-/*static bool
+/*
+static bool
 cond_priority_less (const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED)
 { 
-  const struct semaphore_elem *a = list_entry (a_, struct semaphore_elem, elem);
-  const struct semaphore_elem *b = list_entry (b_, struct semaphore_elem, elem);
+//	printf("\n>%d<\n",list_entry (b_, struct semaphore_elem, elem)->priority);
+  //const struct semaphore_elem *a = list_entry (a_, struct semaphore_elem, elem);
+//  const struct semaphore_elem *b = list_entry (b_, struct semaphore_elem, elem);
   
-  return a->priority > b->priority;
+ // return a->priority > b->priority;
+return false;
 }
-
 */
+//   sema_up (&list_entry (list_pop_front (&cond->waiters),
+//                          struct semaphore_elem, elem)->semaphore);
+
 
 
 
@@ -335,12 +340,33 @@ cond_wait (struct condition *cond, struct lock *lock)
   
   sema_init (&waiter.semaphore, 0);
 	waiter.priority = lock->holder->priority;
-// list_push_back (&cond->waiters, &waiter.elem);
-list_insert_ordered(&cond->waiters, &waiter.elem, priority_less, NULL);
+ list_push_back (&cond->waiters, &waiter.elem);
+//list_insert_ordered(&cond->waiters, &waiter.elem, cond_priority_less, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
 }
+
+//$$$
+struct list_elem* find_highest_priority_thread_for_cond(struct condition *cond)
+{
+	struct list_elem *e;
+	struct semaphore_elem *temp;
+	struct list_elem *highest = malloc(sizeof(struct list_elem ));
+	int temp_priority = 0;
+	for(e = list_begin(&cond->waiters); e != list_tail(&cond->waiters);e = list_next(e))
+	{
+		temp = 	list_entry(e, struct semaphore_elem, elem);
+		if( temp->priority > temp_priority)
+		{
+			highest = e;
+			temp_priority = temp->priority;
+		}
+	}	
+	return highest;
+
+}
+
 
 /* If any threads are waiting on COND (protected by LOCK), then
    this function signals one of them to wake up from its wait.
@@ -352,14 +378,17 @@ list_insert_ordered(&cond->waiters, &waiter.elem, priority_less, NULL);
 void
 cond_signal (struct condition *cond, struct lock *lock UNUSED) 
 {
+	struct list_elem *highest;
   ASSERT (cond != NULL);
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)){
+	highest = find_highest_priority_thread_for_cond(cond);
+	list_remove(highest);
+    	sema_up (&list_entry (highest, struct semaphore_elem, elem)->semaphore);
+	}	
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
