@@ -114,6 +114,20 @@ main (void)
   syscall_init ();
 #endif
 
+//added for maintaining child_process of main.
+//	printf("\nIn init.c name : %s\n", thread_name());
+
+//	struct s_child *ch_thread = thread_current()->child_threads;
+
+	thread_current()->child_threads = palloc_get_page(PAL_ZERO);
+	if(thread_current()->child_threads == NULL)
+		return TID_ERROR;
+	 memset(thread_current()->child_threads, 0, 128*sizeof(struct s_child));
+        thread_current()->child_cnt = 0;
+	thread_current()->parent = NULL;
+
+
+
   /* Start thread scheduler and enable interrupts. */
   thread_start ();
   serial_init_queue ();
