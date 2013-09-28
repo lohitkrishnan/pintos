@@ -14,6 +14,7 @@ test_main (void)
   CHECK ((handle = open ("rox-simple")) > 1, "open \"rox-simple\"");
   CHECK (read (handle, buffer, sizeof buffer) == (int) sizeof buffer,
          "read \"rox-simple\"");
+//printf("\n>wrote %d bytes <\n", (write (handle, buffer, sizeof buffer)));
   CHECK (write (handle, buffer, sizeof buffer) == 0,
          "try to write \"rox-simple\"");
 }

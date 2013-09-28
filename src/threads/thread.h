@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 
 #include "threads/synch.h"
 
@@ -27,13 +29,21 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+struct fd_elem
+{
+	bool used;
+	struct file *file;
+	
+};
 
 
 struct s_child
 {
+	tid_t tid;
 	struct thread *child;	
 	int status;
 	bool repeat;
+	bool invalid;
 };
 /* A kernel thread or user process.
 
@@ -114,7 +124,9 @@ struct thread
 	int child_cnt;
 	struct thread *parent;
 	struct semaphore exit_sema;
-
+	
+	struct fd_elem fd_arr[128];
+	struct file *exec_file;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint32_t *pagedir;                  /* Page directory. */

@@ -111,11 +111,11 @@ check_file_handle (int fd,
   const char *buf = buf_;
   size_t ofs = 0;
   size_t file_size;
-
   /* Warn about file of wrong size.  Don't fail yet because we
      may still be able to get more information by reading the
      file. */
   file_size = filesize (fd);
+
   if (file_size != size)
     msg ("size of %s (%zu) differs from expected (%zu)",
           file_name, file_size, size);

@@ -21,10 +21,10 @@ try_write (void)
   quiet = true;
   CHECK ((handle = open ("child-rox")) > 1, "open \"child-rox\"");
   quiet = false;
-
+//printf("\n11\n");
   CHECK (write (handle, buffer, sizeof buffer) == 0,
          "try to write \"child-rox\"");
-  
+  //printf("\n22\n");
   close (handle);
 }
 
@@ -33,7 +33,7 @@ main (int argc UNUSED, char *argv[])
 {
   msg ("begin");
   try_write ();
-
+//printf("\nHERE\n");
   if (!isdigit (*argv[1]))
     fail ("bad command-line arguments");
   if (atoi (argv[1]) > 1) 

@@ -32,6 +32,19 @@ struct for_wait
 	bool status;
 };
 
+//Function which closes all the files before exiting.
+void close_all_files(void)
+{
+	struct thread *curr = thread_current();
+	int i;
+
+	for(i = 2; i < 128; i++)
+	{
+		if(curr->fd_arr[i].used == true)
+			file_close(curr->fd_arr[i].file);
+	}
+}
+
 
 //function to put status into parent while exiting.
 
@@ -39,27 +52,37 @@ void put_status_in_parent(int status)
 {
 	struct thread *parent = thread_current()->parent;
 	//struct thread *curr = thread_current();
+
+	//put status if  the parent is alive.
+	if(parent == NULL || parent->magic != THREAD_MAGIC)
+		return;
+
 	int child_tid = thread_current()->tid;
 	struct thread *child;
 	struct s_child *childs = parent->child_threads;
 	int success = 0;
 	int i;
 	int struct_size = sizeof(struct s_child);
-
+//printf("parent : ptr = %p, child_tid %d\n",childs, child_tid);
+//printf("Table \n i = 0, my_struct->tid = %d \n i = 1, my_struct->tid = %d \n", childs->tid, ((childs + sizeof(struct s_child)*1)->tid));
 	for (i = 0; i < parent->child_cnt ; i++)
 	{
-
 		child = (childs + struct_size*i)->child;
-		if ( child->tid == child_tid)
+//		printf("childs : %p, d = %d, total = %p ::: child_t->tid = %d\n", childs, (struct_size*i), (childs + struct_size*i), child->tid);
+		if ( (childs + struct_size *i)->tid == child_tid)
 		{
-			if ((childs + struct_size * i)->status == NULL)
+//			printf("Coming in for child_tid : %d and i = %d\n", child_tid, i);
+			if (/*childs + struct_size * i)->status == NULL &&*/ (childs + struct_size *i)->invalid != true)
 			{
+//				printf("child_tid : %d, Putting Status : %d , i = %d\n$$\n", child->tid, status, i);
 				(childs + struct_size*i)->status = status;
+				(childs + struct_size*i)->invalid = true;
 				//success = 1;
 				return ;
 			}
 			else
 			{
+//				printf("\nLeaving without Putting\n");
 				//		printf("\nTrying to put status twice\n");
 				return;
 			}
@@ -96,7 +119,7 @@ process_execute (const char *file_name)
 	x.status = true;
 	x.file_name_ = fn_copy;
 
-	//	printf("\nHERE\n");
+//		printf("\nHERE\n");
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, start_process, (&x));
 
@@ -107,7 +130,7 @@ process_execute (const char *file_name)
 	//	printf("\nHERE2\n");
 	sema_down(&(x.waiting));
 
-	//	printf("\nHERE3\n");
+//		printf("\nthread : %s , creating thread : %s \n", thread_current()->name, file_name);
 	if(x.status)
 		return tid;
 	else
@@ -183,35 +206,48 @@ process_wait (tid_t child_tid UNUSED)
 	int success = 0;
 	int i;
 	int struct_size = sizeof(struct s_child);
-		printf("\nChild_count of %s : %d\n", thread_name(), curr->child_cnt);
+//	enum intr_level old_level;
+//	old_level = intr_disable();
+		//printf("\nChild_count of %s : %d\n", thread_name(), curr->child_cnt);
 	for (i = 0; i < curr->child_cnt ; i++)
 	{
 
 		child = (childs + struct_size*i)->child;
-		printf("\n %d: ",i);
-		if(child== NULL || child->magic != THREAD_MAGIC)
-			printf("not a thread \n " );
-		if ( child != NULL && child->tid == child_tid)
+	//	printf("\n %d: ",i);
+//		if(child== NULL || child->magic != THREAD_MAGIC)
+//		printf("not a thread \n " );
+//		if ( child != NULL && child->tid == child_tid)
+		if((childs + struct_size*i)->tid == child_tid)
 		{
 			if((childs + struct_size * i)->repeat == false){
 				(childs + struct_size * i)->repeat = true;
+	//			printf(" child_tid : %d, i = %d, status = %d\n", child_tid, i, (childs + struct_size*i)->status);
 				success = 1;
 				break;
 			}
 			else
 			{
-				printf("\nTRYing again\n");
-				break;}
+//				printf("\nTRYing again\n");
+				break;
+}
 
 		}
 	}
 
 	if(success == 0){
-
+	//	printf("\nreturning -1\n");
+//		intr_set_level(old_level);
 		return -1;
 	}
-	sema_down(&child->exit_sema);
-	return 0;
+	if(child != NULL && child->magic == THREAD_MAGIC)
+{
+//		printf("\nGoing to wait for semaphore\n");
+		sema_down(&(child->exit_sema));
+}
+	//printf("\n>> %d\n", (childs + struct_size * i)->status);
+
+//		intr_set_level(old_level);
+	return ((childs + struct_size *i)->status);
 	//return -1;
 }
 
@@ -372,6 +408,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
+	thread_current()->exec_file = file;
 	if (file == NULL) 
 	{
 
@@ -379,6 +416,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 		goto done; 
 	}
 
+	file_deny_write(file);
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -503,7 +541,7 @@ done1:
 	*esp = *esp - 4;
 	*(int *)*esp = 0;
 done :	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+//	file_close (file);
 	return success;
 }
 
