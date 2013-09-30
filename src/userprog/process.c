@@ -20,11 +20,12 @@
 
 
 #define THREAD_MAGIC 0xcd6abf4b
- 
+
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+/* Structure used for synchronization between the parent and the child in process_execute function */
 struct for_wait
 {
 	struct semaphore waiting;
@@ -32,7 +33,10 @@ struct for_wait
 	bool status;
 };
 
-//Function which closes all the files before exiting.
+/* 
+	Function which closes all the files of the current thread.
+	This is called just before exiting the thread. This ensures that there is no memory leak.
+*/
 void close_all_files(void)
 {
 	struct thread *curr = thread_current();
@@ -41,18 +45,20 @@ void close_all_files(void)
 	for(i = 2; i < 128; i++)
 	{
 		if(curr->fd_arr[i].used == true)
+		{
 			file_close(curr->fd_arr[i].file);
+			curr->fd_arr[i].used = false;
+		}
+
 	}
 }
 
 
-//function to put status into parent while exiting.
+//function to put status into parent. This is called while the thread exits.
 
 void put_status_in_parent(int status)
 {
 	struct thread *parent = thread_current()->parent;
-	//struct thread *curr = thread_current();
-
 	//put status if  the parent is alive.
 	if(parent == NULL || parent->magic != THREAD_MAGIC)
 		return;
@@ -63,29 +69,13 @@ void put_status_in_parent(int status)
 	int success = 0;
 	int i;
 	int struct_size = sizeof(struct s_child);
-//printf("parent : ptr = %p, child_tid %d\n",childs, child_tid);
-//printf("Table \n i = 0, my_struct->tid = %d \n i = 1, my_struct->tid = %d \n", childs->tid, ((childs + sizeof(struct s_child)*1)->tid));
 	for (i = 0; i < parent->child_cnt ; i++)
 	{
 		child = (childs + struct_size*i)->child;
-//		printf("childs : %p, d = %d, total = %p ::: child_t->tid = %d\n", childs, (struct_size*i), (childs + struct_size*i), child->tid);
 		if ( (childs + struct_size *i)->tid == child_tid)
 		{
-//			printf("Coming in for child_tid : %d and i = %d\n", child_tid, i);
-			if (/*childs + struct_size * i)->status == NULL &&*/ (childs + struct_size *i)->invalid != true)
-			{
-//				printf("child_tid : %d, Putting Status : %d , i = %d\n$$\n", child->tid, status, i);
-				(childs + struct_size*i)->status = status;
-				(childs + struct_size*i)->invalid = true;
-				//success = 1;
-				return ;
-			}
-			else
-			{
-//				printf("\nLeaving without Putting\n");
-				//		printf("\nTrying to put status twice\n");
-				return;
-			}
+			(childs + struct_size*i)->status = status;
+			return ;
 		}
 	}
 	printf("\nDidn't find the tid of child in parent's array\n");
@@ -93,14 +83,13 @@ void put_status_in_parent(int status)
 }
 
 
-
-
-
-
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
-   thread id, or TID_ERROR if the thread cannot be created. */
+   thread id, or TID_ERROR if the thread cannot be created. 
+This waits till the new thread loads using the semaphore x.waiting.
+The status of the load is put in x.status by the new thread.
+*/
 	tid_t
 process_execute (const char *file_name) 
 {
@@ -118,19 +107,16 @@ process_execute (const char *file_name)
 	sema_init(&(x.waiting), 0 );
 	x.status = true;
 	x.file_name_ = fn_copy;
-
-//		printf("\nHERE\n");
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, start_process, (&x));
 
-	//	printf("\nHERE1\n");
 	if (tid == TID_ERROR)
+	{
 		palloc_free_page (fn_copy); 
+		return TID_ERROR;
+	}
 
-	//	printf("\nHERE2\n");
 	sema_down(&(x.waiting));
-
-//		printf("\nthread : %s , creating thread : %s \n", thread_current()->name, file_name);
 	if(x.status)
 		return tid;
 	else
@@ -141,9 +127,9 @@ process_execute (const char *file_name)
    running. */
 static void
 //start_process (void *file_name_)
+/* If the load is unsuccessful, then perform all the actions similar to SYS_EXIT call. */
 start_process(void *x)
 {
-	//	printf("\nYO1\n");
 	char *file_name = ((struct for_wait *)x)->file_name_;
 	struct intr_frame if_;
 	bool success;
@@ -156,23 +142,22 @@ start_process(void *x)
 
 	success = load (file_name, &if_.eip, &if_.esp);
 
-	/* If load failed, quit. */
+	/* If load failed, quit appropriately. */
 	palloc_free_page (file_name);
 	if (!success)
 	{
 		((struct for_wait *)x)->status = false;
-		char *delimiter = " ";
-		char *saveptr;
-
-		put_status_in_parent(-1);
-		struct semaphore *a = &(thread_current()->exit_sema);
-
-		sema_up(&(thread_current()->exit_sema));
+//		char *delimiter = " ";
+//		char *saveptr;
+	
 		sema_up(&(((struct for_wait *)x)->waiting));
+		exit_syscall(-1);
+/*		put_status_in_parent(-1);
+		sema_up(&(thread_current()->exit_sema));
+		file_close(thread_current()->exec_file);
+		close_all_files();
 		printf ("%s: exit(-1)\n", strtok_r(thread_name(), delimiter, &saveptr));
-
-
-		thread_exit ();
+		thread_exit ();*/
 	}
 	sema_up(&(((struct for_wait *)x)->waiting));
 
@@ -193,8 +178,9 @@ start_process(void *x)
    been successfully called for the given TID, returns -1
    immediately, without waiting.
 
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+	This gets the appropriate child from the thread_current()->child_threads pointer and 
+	it waits for the child to get exitted using the semaphore exit_sema 
+*/
 	int
 process_wait (tid_t child_tid UNUSED) 
 {
@@ -206,49 +192,35 @@ process_wait (tid_t child_tid UNUSED)
 	int success = 0;
 	int i;
 	int struct_size = sizeof(struct s_child);
-//	enum intr_level old_level;
-//	old_level = intr_disable();
-		//printf("\nChild_count of %s : %d\n", thread_name(), curr->child_cnt);
 	for (i = 0; i < curr->child_cnt ; i++)
 	{
 
 		child = (childs + struct_size*i)->child;
-	//	printf("\n %d: ",i);
-//		if(child== NULL || child->magic != THREAD_MAGIC)
-//		printf("not a thread \n " );
-//		if ( child != NULL && child->tid == child_tid)
 		if((childs + struct_size*i)->tid == child_tid)
 		{
 			if((childs + struct_size * i)->repeat == false){
 				(childs + struct_size * i)->repeat = true;
-	//			printf(" child_tid : %d, i = %d, status = %d\n", child_tid, i, (childs + struct_size*i)->status);
 				success = 1;
 				break;
 			}
 			else
 			{
-//				printf("\nTRYing again\n");
 				break;
-}
+			}
 
 		}
 	}
 
-	if(success == 0){
-	//	printf("\nreturning -1\n");
-//		intr_set_level(old_level);
+	if(success == 0)
+	{
 		return -1;
 	}
 	if(child != NULL && child->magic == THREAD_MAGIC)
-{
-//		printf("\nGoing to wait for semaphore\n");
+	{
 		sema_down(&(child->exit_sema));
-}
-	//printf("\n>> %d\n", (childs + struct_size * i)->status);
-
-//		intr_set_level(old_level);
+		(childs+ struct_size * i)->invalid = true;
+	}
 	return ((childs + struct_size *i)->status);
-	//return -1;
 }
 
 /* Free the current process's resources. */
@@ -375,16 +347,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
 	bool success = false;
 	int i;
 
-	//$$$
 	/*Tokenize the filename here*/
-	//	*esp = PHYS_BASE;
 	int end, roundoff = 0;
 	int * last_arg_loc;
-	char *arg[32], *r;
+	char *arg[128], *r;
 	const char *delimiter = " ";
 	char *saveptr;
 	int return_add = 0;
-	for (i =0 ; i < 32; i++)
+	for (i =0 ; i < 128; i++)
 		arg[i] = NULL;
 
 
@@ -399,7 +369,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 	}
 	end = i;
 	file_name = arg[0];
-	//$$$
 	/* Allocate and activate page directory. */
 	t->pagedir = pagedir_create ();
 	if (t->pagedir == NULL) 
@@ -481,16 +450,20 @@ load (const char *file_name, void (**eip) (void), void **esp)
 					}
 					if (!load_segment (file, file_page, (void *) mem_page,
 								read_bytes, zero_bytes, writable))
+					{
 						goto done;
+					}
+
 				}
 				else
 					goto done;
 				break;
 		}
 	}
+
 	/* Set up stack. */
 	if (!setup_stack (esp))
-		goto done1;
+		goto done;
 
 	/* Start address. */
 	*eip = (void (*) (void)) ehdr.e_entry;
@@ -501,10 +474,12 @@ done1:
 	//Putting the arguments in the reverse order. Also calculating the total bytes required in 'roundoff'
 	for (i = end -1 ; i >= 0; i--)
 	{
+	if(!(*esp <= PHYS_BASE && *esp >= 0))
+		return TID_ERROR;
 		*esp = *esp - (strlen(arg[i]) + 1);	
 		roundoff = roundoff + strlen(arg[i]) + 1;
 		memcpy(*esp, arg[i], strlen(arg[i])+1);
-
+	
 		arg[i] = *esp;
 	}
 	//Calculating the padding required
@@ -541,10 +516,8 @@ done1:
 	*esp = *esp - 4;
 	*(int *)*esp = 0;
 done :	/* We arrive here whether the load is successful or not. */
-//	file_close (file);
 	return success;
 }
-
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
@@ -670,13 +643,6 @@ setup_stack (void **esp)
 		else
 			palloc_free_page (kpage);
 	}
-	//$$$
-
-
-
-
-
-	//$$$
 	return success;
 }
 

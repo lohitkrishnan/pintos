@@ -204,9 +204,8 @@ thread_create (const char *name, int priority,
 	int i;
 
 	//	struct s_child *ch_threads = t->child_threads;
-
-	        if(thread_current()->child_cnt >= 50)
-                return -1;
+	//if(thread_current()->child_cnt >= 50)
+	//return -1;
 
 
 	ASSERT (function != NULL);
@@ -216,23 +215,15 @@ thread_create (const char *name, int priority,
 	if (t == NULL)
 		return TID_ERROR;
 
-	// Allocate a page for maintaining child' data.
-
-	//	sema_init(&(t->exit_sema), 0);
-	//	if(t->exit_sema.waiters.head.next == &(t->exit_sema.waiters.tail))  
-	//                              printf("\nYEAH\n");      	
-	//	t->child_threads = palloc_get_page(PAL_ZERO);
-	//	if(t->child_threads == NULL)
-	//		return TID_ERROR;	
-	//	memset(ch_threads, 0, 128*sizeof(struct s_child));
 
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 
 	t->child_threads = palloc_get_page(PAL_ZERO);
-	if(t->child_threads == NULL)
+	if(t->child_threads == NULL){
+		palloc_free_page(t);
 		return TID_ERROR;
-
+	}
 
 	curr = thread_current();
 	t->child_cnt = 0;
@@ -241,42 +232,34 @@ thread_create (const char *name, int priority,
 	sema_init(&(t->exit_sema), 0);
 
 	tid = t->tid = allocate_tid ();
-	/*	for(i=0; i <= curr->child_cnt; i++)
-		{	
-		node =( curr->child_threads + sizeof(struct s_child) * i);
+
+	for(i=0; i <= curr->child_cnt; i++)
+	{	
+		node = (curr->child_threads + sizeof(struct s_child) * i);
+		if((sizeof(struct s_child)* i) >= (PGSIZE - (sizeof(struct s_child))))
+		{
+			palloc_free_page(t->child_threads);
+			palloc_free_page(t);
+			return TID_ERROR;
+		}
+
 		if(node->invalid == true || i == curr->child_cnt)
 		{
-		node->child = t;
-		node->status = NULL;
-		node->repeat = false;
-		node->tid = t->tid;
-		node->invalid = false;
+			node->child = t;
+			node->status = NULL;
+			node->repeat = false;
+			node->tid = t->tid;
+			node->invalid = false;
+			if(i == curr->child_cnt)
+				curr->child_cnt ++;
+
+			break;
 		}
-		if(i == curr->child_cnt)
-		curr->child_cnt ++;	
-
-		}	
-	 */
-#if 0
-	if(sizeof(struct s_child)*(thread_current()->child_cnt) >= PGSIZE)
-	{
-		return -1;
-	}
-#endif
-//	if(thread_current()->child_cnt >= 50)
-//		return -1;
-	(thread_current()->child_threads + sizeof(struct s_child)* thread_current()->child_cnt)->child = t;
-	(thread_current()->child_threads + sizeof(struct s_child)* thread_current()->child_cnt)->status = NULL;
-
-	(thread_current()->child_threads + sizeof(struct s_child)* thread_current()->child_cnt)->repeat = false;
-
-	(thread_current()->child_threads + sizeof(struct s_child)* thread_current()->child_cnt)->tid = t->tid;
-	(thread_current()->child_threads + sizeof(struct s_child)* thread_current()->child_cnt)->invalid = false;
-	thread_current()->child_cnt ++;  
+	}	
 
 	for(i = 0;i <128; i++)
 	{	
-		if(i > 2)
+		if(i >= 2)
 			t->fd_arr[i].used = false; 
 		else
 			t->fd_arr[i].used = true;
@@ -286,7 +269,6 @@ thread_create (const char *name, int priority,
 	   Do this atomically so intermediate values for the 'stack' 
 	   member cannot be observed. */
 	old_level = intr_disable ();
-
 	/* Stack frame for kernel_thread(). */
 	kf = alloc_frame (t, sizeof *kf);
 	kf->eip = NULL;
@@ -415,7 +397,6 @@ thread_exit (void)
 	intr_disable ();
 	list_remove (&thread_current()->allelem);
 	thread_current ()->status = THREAD_DYING;
-	//printf("\nBefore schdule\n");
 	schedule ();
 	NOT_REACHED ();
 }
@@ -683,7 +664,6 @@ thread_schedule_tail (struct thread *prev)
 		palloc_free_page (prev->child_threads);
 		palloc_free_page (prev);
 	}
-//	printf("\nEnd of thread_schedule tail\n");
 }
 
 
@@ -704,7 +684,6 @@ schedule (void)
 	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (cur->status != THREAD_RUNNING);
 	ASSERT (is_thread (next));
-//	printf("\nIn schedule\n");
 	if (cur != next)
 		prev = switch_threads (cur, next);
 	thread_schedule_tail (prev);

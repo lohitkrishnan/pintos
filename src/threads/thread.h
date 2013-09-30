@@ -28,7 +28,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-
+/* Structure for storing the open files of a thread */
 struct fd_elem
 {
 	bool used;
@@ -36,7 +36,11 @@ struct fd_elem
 	
 };
 
-
+/* Structure for storing the details of a single child
+	Whenever the child exits, it updates the status field.
+	After a wait call is successfully executed, the repeat and invalid bit is set to true.
+	tid contains the thread_id of the child pointed by "child".	
+ */
 struct s_child
 {
 	tid_t tid;
@@ -120,12 +124,23 @@ struct thread
 	struct list_elem elem1;
 	struct list retrace_priority_list;
 
+// Pointer for storing the information about childs
 	struct s_child *child_threads;
+// The current count of children for this thread.
 	int child_cnt;
+// pointer to the parent thread.
 	struct thread *parent;
+// Semaphore used in process_wait, so that parent can wait for the child.
 	struct semaphore exit_sema;
-	
+
+/* Array storing the current open files for this thread. The index of the array denotes the 
+ file Descriptor for that file.
+	Total of 128 files can be opened at the same time. 	*/
 	struct fd_elem fd_arr[128];
+
+/* Pointer to the executable file of the current user-thread.
+	This pointer is required for the functionality of "Denying writes to the executables"
+	This file will be closed when the thread exits. */
 	struct file *exec_file;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -134,10 +149,8 @@ struct thread
 
 	/* Owned by thread.c. */
 	unsigned magic;                     /* Detects stack overflow. */
-	/* $$$ */
 	//Time till when it will sleep.
 	int64_t end_time;
-	/* $$$ */
 };
 
 /* If false (default), use round-robin scheduler.

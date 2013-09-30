@@ -7,35 +7,12 @@
 #include "lib/user/syscall.h"
 #include<string.h>
 #include "filesys/file.h"
-//#include "filesys/file.c"
 #include "filesys/filesys.h"
-//#include "filesys/inode.c"
 
-#if 0
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
-
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    block_sector_t start;               /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
-  };
-
-
-struct file
-  {
-    struct inode *inode;        /* File's inode. */
-    off_t pos;                  /* Current position. */
-    bool deny_write;            /* Has file_deny_write() been called? */
-  };
-
-#endif      
 static void syscall_handler (struct intr_frame *);
+//Semaphore x is used for synchronization between all the file system-calls
 struct semaphore x;
+
 	void
 syscall_init (void) 
 {
@@ -43,12 +20,18 @@ syscall_init (void)
 	sema_init(&x, 1);
 }
 
+//Check if esp is valid
 bool check_esp(struct intr_frame *f)
 {
 	return (!(is_user_vaddr((int *)f->esp) && (int *)f->esp != NULL
 				&& pagedir_get_page(thread_current()->pagedir, (f->esp)) != NULL));
 }
 
+/* 
+   This function checks whether pointer "p" of TYPE "type" is  valid or not
+   Returns 1 if invalid
+   Returns 0 if valid.
+ */
 bool check(void *p, char *type)
 {
 
@@ -61,12 +44,16 @@ bool check(void *p, char *type)
 	else
 		printf("\nType is not defined in check() !!\n");
 }
-
+/* 
+   This function adds file fp into the array "fd_arr" of the current thread.
+   It returns the File descriptor fd
+   If the max limit of open files have reached then it returns -1.
+ */
 int add_file_to_arr(struct file *fp)
 {
 	int i;
 	struct thread *curr = thread_current();
-	for (i = 3; i < 128; i++)
+	for (i = 2; i < 128; i++)
 	{
 		if(curr->fd_arr[i].used == false)
 		{
@@ -75,30 +62,43 @@ int add_file_to_arr(struct file *fp)
 			return i;
 		}
 	}
-//	printf("\nIn add_file_to_arr, no space here !!\n");	
-return -1;
+	return -1;
 }
 
+void exit_syscall(int status)
+{
+	char *saveptr;
+	put_status_in_parent(status);
+	printf ("%s: exit(%d)\n", strtok_r(thread_name(), " ", &saveptr), status);
+	sema_up(&(thread_current()->exit_sema));
+	file_close(thread_current()->exec_file);
+	close_all_files();
+	thread_exit();
+
+}
+
+
+/*
+   From the File Descriptor fd, it returns the file pointer to the specific file.
+   If the fd is invalid then it returns NULL.
+ */
 struct file* get_file(int fd)
 {
 	struct file *fp = NULL;
 	struct thread *curr = thread_current();
-	
-	 if((fd <= 2) || fd >=128 )
+
+	if((fd < 2) || fd >=128 )
 		return NULL;
 	if(curr->fd_arr[fd].used == false)
 	{
-	//printf("\nwill come here\n");
 		return NULL;
 	}
 	else
 	{
-		curr->fd_arr[fd].used = true;
-//		printf("\nFile pos : %d\n", curr->fd_arr[fd].file->pos);
 		return curr->fd_arr[fd].file;
 	}
 }
-	
+
 	static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
@@ -147,12 +147,12 @@ syscall_handler (struct intr_frame *f UNUSED)
 				goto error_in_esp;
 
 			size = *(unsigned int *)(f->esp);
-			
+
 			if(fd == 1){
 				putbuf(buf, size);
 				f->eax = 0;
 			}
-			else if(fd == 0 || fd == 2 || fd >= 128)
+			else if(fd == 0 || fd >= 128)
 				f->eax = -1;
 			else 
 			{	
@@ -163,24 +163,16 @@ syscall_handler (struct intr_frame *f UNUSED)
 				}
 				else
 				{
-				//	printf("\nfile : %x << size to be written : %d\n",s_file,size);
-                                  //      printf ("%X\n",buf);
-                                    //    printf ("%s\n",buf);
-                                      //  file_allow_write (s_file);
 					f->eax = file_write(s_file, buf, size);
-
-//	printf("\nfd : %d write done. \t sizeof(buf) : %d \tStatus : %d\n", fd,strlen(buf), f->eax);
 				}
 			}
 			f->esp = old_esp;
 			sema_up(&x);
 			break;
+
 		case SYS_WAIT:
 			pid = *(pid_t *)(f->esp);
-			//			if (pid == -1 ){
-			//				goto error_in_esp;	}
 			f->eax = process_wait(pid);
-		//	printf("\nIn SYS_WAIT. thread : %s, returned value : %d \n", thread_name(), f->eax);
 			f->esp = old_esp;
 			break;
 		case SYS_EXEC:
@@ -188,14 +180,9 @@ syscall_handler (struct intr_frame *f UNUSED)
 
 			if(check(file, "char *"))
 				goto error_in_esp;
-			//		if(!(is_user_vaddr((char *)file) && (char *)file != NULL
-			//					&& pagedir_get_page(thread_current()->pagedir, file) != NULL)){
-			//			goto error_in_esp;}
-
 			f->esp = old_esp;
 			if((tid = process_execute(file)) == TID_ERROR)
 			{
-//				printf("\nProcess_execute failed\n");
 				pid = -1;
 			}
 			else
@@ -203,80 +190,84 @@ syscall_handler (struct intr_frame *f UNUSED)
 				pid = tid;
 			}
 			f->eax = pid;
-//			printf("\nExec to %s returned %d\n", file, pid);
 			break;
 		case SYS_HALT:
 			shutdown_power_off();	
 			break;
+			/*
+			   Steps done in SYS_EXIT system call.
+			   1. Put the status in parent.
+			   2. Do the proper printf statement.
+			   3. Signal to the parent via "exit_sema" semaphore indicating that 
+			   this thread is going to be exitted
+			   4. Close the executable file of the current thread.
+			   5. Close all the files of this current thread.
+			 */
 		case SYS_EXIT:
-			sema_down(&x);
 			status = *(int *)(f->esp);
 			f->eax = status;
-//			if((struct thread *)thread_current()->parent == NULL)
-//			{
-//				goto error_in_esp;
-//			}
-//			printf("thread_tid :%d Status : %d\n",thread_current()->tid, status);			
-			put_status_in_parent(status);
-
-			struct semaphore *a = &(thread_current()->exit_sema);
-
 			f->esp = old_esp;	
+			
+			exit_syscall(status);
+			/*
+			put_status_in_parent(status);
 			printf ("%s: exit(%d)\n", strtok_r(thread_name(), delimiter, &saveptr), f->eax);
 			sema_up(&(thread_current()->exit_sema));
-			
 			file_close(thread_current()->exec_file);
-			sema_up(&x);
 			close_all_files();
-			thread_exit();	
+			thread_exit();	*/
+
 			break;
 		case SYS_CREATE:
-			
 			sema_down(&x);
 			file_name = *(char **)f->esp;
 			if(check(file_name, "char *"))
 				goto error_in_esp;
 			f->esp += sizeof(char *);
 			size = *(int *)f->esp;
-//                        printf ("Size: %d\n",size);
 			f->eax = filesys_create(file_name, size);
 			f->esp = old_esp;
 			sema_up(&x);
 			break;
+			/*
+			   Open the file.
+			   If the file is invalid, return -1.
+			   For valid files, get the file descriptor using a call to add_file_to_arr function.
+			   Return the File-descriptor fd.
+			 */
 		case SYS_OPEN:
 			sema_down(&x);
 			file_name = *(char **)f->esp;
-			 if(check(file_name, "char *"))
-                                goto error_in_esp;
-                        //filesys_create ("junk.t",50);
+			if(check(file_name, "char *"))
+				goto error_in_esp;
 			s_file = filesys_open(file_name);
-//                        printf("File open %s\n",file_name);
 			if(s_file == NULL)
 			{
 				f->eax = -1;
 			}
 			else
 			{
-	//file_deny_write(s_file);
 				fd = add_file_to_arr(s_file);
-//printf("\nthread :%s ,Opening file :%x , its fd : %d\n",thread_name(),s_file, fd);
 				f->eax = fd;	
 			}
 			f->esp = old_esp;
 			sema_up(&x);
 			break;
+			/*
+			   1. Get the file from the file descriptor fd using get_file function.
+			   2. If invalid then return -1.
+			   3. For valid files, close the file and mark the space of the specified fd as free.
+			 */
 		case SYS_CLOSE:
 			sema_down(&x);
 			fd = *(int *)f->esp;
 			s_file = get_file(fd);
 			if(s_file == NULL)
 			{	
-//				printf("\ns_file == NULL\n");
 				f->eax = -1;
 			}
 			else
 			{
-//				printf("\nThread : %s\n",thread_name());
 				thread_current()->fd_arr[fd].used = false;
 				file_close(s_file);
 			}
@@ -286,7 +277,6 @@ syscall_handler (struct intr_frame *f UNUSED)
 		case SYS_READ:
 			sema_down(&x);
 			fd = *(int *)f->esp;
-//			printf("\nThread :%s, Reading fd = %d\n", thread_name(), fd);
 			f->esp += sizeof(int);
 
 			file = *(char **)f->esp;
@@ -308,22 +298,18 @@ syscall_handler (struct intr_frame *f UNUSED)
 			}
 			else
 			{
-			
-			s_file = get_file(fd);
-		//	printf("\nthread : %s file : %x",thread_name(),s_file);
-			if(s_file == NULL)
-			{	
-//				printf("\nRead will exit with -1\n");	
-				f->eax = -1;
-			}
-			else
-			{
-						
-			file_deny_write(s_file);
-				f->eax = file_read(s_file, file, size);
-			file_allow_write(s_file);
-			//	printf("\nRead exiting with status : %d\n", (int)f->eax);
-			}
+
+				s_file = get_file(fd);
+				if(s_file == NULL)
+				{	
+					f->eax = -1;
+				}
+				else
+				{
+					file_deny_write(s_file);
+					f->eax = file_read(s_file, file, size);
+					file_allow_write(s_file);
+				}
 			}
 			f->esp = old_esp;
 			sema_up(&x);
@@ -331,22 +317,19 @@ syscall_handler (struct intr_frame *f UNUSED)
 		case SYS_FILESIZE:
 			sema_down(&x);
 			fd = *(int *)f->esp;
-//			printf("\nasking for file_size. FD : %d\n", fd);
-			if((fd >=0 && fd <= 2) || fd >= 128)
+			if((fd >=0 && fd < 2) || fd >= 128)
 				f->eax = -1;
 			else
 			{
 				s_file = get_file(fd);
-//					printf("\nhere thread : %s, file : %x\n",thread_name(), s_file);	
 				if(s_file == NULL)
 				{
-					
+
 					f->eax = -1;
 				}
 				else
 				{
 					f->eax = file_length(s_file);
-//					printf("\nfile : %x, size : %d\n",s_file, f->eax);
 				}
 			}
 			f->esp =old_esp;
@@ -355,12 +338,12 @@ syscall_handler (struct intr_frame *f UNUSED)
 		case SYS_SEEK:
 			sema_down(&x);
 			fd = *(int *)f->esp;
-			
+
 			f->esp += sizeof(int);
 			if(check_esp(f))
 				goto error_in_esp;
 			size = *(unsigned int *)f->esp;
-			
+
 			s_file = get_file(fd);
 			if(s_file == NULL)
 			{
@@ -384,15 +367,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 			}
 			else
 			{
-				file_tell(s_file);
-				f->eax = 0;
+				f->eax = file_tell(s_file);
 			}
 			f->esp = old_esp;
 			sema_up(&x);
 			break;
 		case SYS_REMOVE:
 			sema_down(&x);
-			
+
 			file_name = *(char **)f->esp;
 			if(check(file_name, "char *"))
 				goto error_in_esp;
@@ -411,14 +393,14 @@ error_in_esp :
 	f->eax = -1;
 	f->esp = old_esp;
 
+	sema_up(&x);
+	exit_syscall(-1);
+/*
 	put_status_in_parent(f->eax);	
-	struct semaphore *a = &(thread_current()->exit_sema);
-
 	sema_up(&(thread_current()->exit_sema));
-	 file_close(thread_current()->exec_file);
-
+	file_close(thread_current()->exec_file);
 	close_all_files();
-			sema_up(&x);
 	printf ("%s: exit(%d)\n", strtok_r(thread_name(), delimiter, &saveptr), f->eax);
 	thread_exit();
+*/
 }
